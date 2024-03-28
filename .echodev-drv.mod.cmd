@@ -1,0 +1,1 @@
+cmd_/home/mmssl/Project/qemu/pci-echodev/echodev-drv.mod := printf '%s\n'   echodev-drv.o | awk '!x[$$0]++ { print("/home/mmssl/Project/qemu/pci-echodev/"$$0) }' > /home/mmssl/Project/qemu/pci-echodev/echodev-drv.mod
