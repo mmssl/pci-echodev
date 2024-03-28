@@ -1,1 +1,0 @@
-cmd_/home/mmssl/Project/qemu/pci-echodev/echodev-drv.ko := ../gcc-arm/bin/arm-none-linux-gnueabihf-ld -r -EL -z noexecstack --build-id=sha1  -T scripts/module.lds -o /home/mmssl/Project/qemu/pci-echodev/echodev-drv.ko /home/mmssl/Project/qemu/pci-echodev/echodev-drv.o /home/mmssl/Project/qemu/pci-echodev/echodev-drv.mod.o;  true
