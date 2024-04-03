@@ -1,7 +1,11 @@
+#include <linux/cdev.h>
 #include <linux/delay.h>
+#include <linux/dmaengine.h>
 #include <linux/fs.h>
 #include <linux/init.h>
+#include <linux/list.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/pci_regs.h>
 #include <linux/uaccess.h>
@@ -12,9 +16,85 @@
 #define VID 0x1234
 #define DID 0xbeef
 
+#define DMA_SRC 0x10
+#define DMA_DST 0x18
+#define DMA_CNT 0x20
+#define DMA_CMD 0x28
+#define DMA_RUN 1
+
 struct echodev {
   struct pci_dev *pdev;
+  void __iomem *ptr_bar0;
 } mydev;
+
+static int dma_transfer(struct echodev *echo, void *buffer, int count,
+                        dma_addr_t addr, enum dma_data_direction dir) {
+
+  dma_addr_t buffer_dma_addr =
+      dma_map_single(&echo->pdev->dev, buffer, count, dir);
+
+  /*Set up the DMA controller*/
+  iowrite32(count, echo->ptr_bar0 + DMA_CNT);
+
+  switch (dir) {
+  case DMA_TO_DEVICE:
+    iowrite32(buffer_dma_addr, echo->ptr_bar0 + DMA_SRC);
+    iowrite32(addr, echo->ptr_bar0 + DMA_DST);
+    break;
+
+  case DMA_FROM_DEVICE:
+    iowrite32(buffer_dma_addr, echo->ptr_bar0 + DMA_DST);
+    iowrite32(addr, echo->ptr_bar0 + DMA_SRC);
+    break;
+  default:
+    return -EFAULT;
+  }
+
+  /*fire the DMA*/
+  iowrite32(DMA_RUN | dir, echo->ptr_bar0 + DMA_CMD);
+
+  dma_unmap_single(&echo->pdev->dev, buffer_dma_addr, count, dir);
+  return 0;
+}
+
+static ssize_t echo_write(struct file *file, const char __user *user_buffer,
+                          size_t count, loff_t *offs) {
+  char *buf;
+  int not_copied, to_copy = (count + *offs < 4096) ? count : 4096 - *offs;
+  struct echodev *echo = &mydev;
+
+  if (*offs >= pci_resource_len(echo->pdev, 1))
+    return 0;
+
+  buf = kmalloc(to_copy, GFP_ATOMIC);
+  not_copied = copy_from_user(buf, user_buffer, to_copy);
+
+  dma_transfer(echo, buf, to_copy, *offs, DMA_TO_DEVICE);
+  kfree(buf);
+  *offs += to_copy - not_copied;
+  return to_copy - not_copied;
+}
+
+static ssize_t echo_read(struct file *file, char __user *user_buffer,
+                         size_t count, loff_t *offs) {
+  char *buf;
+  struct echodev *echo = &mydev;
+  int not_copied, to_copy = (count + *offs < pci_resource_len(echo->pdev, 1))
+                                ? count
+                                : pci_resource_len(echo->pdev, 1) - *offs;
+
+  if (to_copy == 0)
+    return 0;
+  buf = kmalloc(to_copy, GFP_ATOMIC);
+  dma_transfer(&mydev, buf, to_copy, *offs, DMA_FROM_DEVICE);
+
+  mdelay(5);
+  not_copied = copy_to_user(user_buffer, buf, to_copy);
+
+  kfree(buf);
+  *offs += to_copy - not_copied;
+  return to_copy - not_copied;
+}
 
 static int echo_mmap(struct file *file, struct vm_area_struct *vma) {
 
@@ -32,6 +112,8 @@ static int echo_mmap(struct file *file, struct vm_area_struct *vma) {
 
 static struct file_operations fops = {
     .mmap = echo_mmap,
+    .read = echo_read,
+    .write = echo_write,
 };
 
 static struct pci_device_id echo_ids[] = {
@@ -58,6 +140,8 @@ static int echo_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
     printk("echodev-drv - Error enabling device\n ");
     goto fdev;
   }
+
+  pci_set_master(pdev);
 
   ptr_bar0 = pcim_iomap(pdev, 0, pci_resource_len(pdev, 0));
   if (!ptr_bar0) {
