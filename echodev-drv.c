@@ -1,14 +1,11 @@
-#include <linux/cdev.h>
 #include <linux/delay.h>
 #include <linux/dmaengine.h>
 #include <linux/fs.h>
 #include <linux/init.h>
-#include <linux/list.h>
 #include <linux/module.h>
-#include <linux/mutex.h>
 #include <linux/pci.h>
-#include <linux/pci_regs.h>
 #include <linux/uaccess.h>
+#include "echodev-cmd.h"
 
 #define DEVNR 64
 #define DEVNRNAME "echodev"
@@ -110,10 +107,37 @@ static int echo_mmap(struct file *file, struct vm_area_struct *vma) {
   return 0;
 }
 
+static long int echo_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+{
+	struct echodev *echo = &mydev;
+	u32 val;
+
+	switch (cmd) {
+		case GET_ID:
+			val = ioread32(echo->ptr_bar0 + 0x00);
+			return copy_to_user((u32 *) arg, &val, sizeof(val));	
+		case GET_INV:
+			val = ioread32(echo->ptr_bar0 + 0x04);
+			return copy_to_user((u32 *) arg, &val, sizeof(val));	
+		case GET_RAND:
+			val = ioread32(echo->ptr_bar0 + 0x0c);
+			return copy_to_user((u32 *) arg, &val, sizeof(val));
+		case SET_INV:
+			if(0 != copy_from_user(&val, (u32 *) arg, sizeof(val)))
+					return -EFAULT;
+			iowrite32(val, echo->ptr_bar0 + 0x4);
+			return 0;
+		default:
+			return -EINVAL;	
+	}
+}
+
+
 static struct file_operations fops = {
     .mmap = echo_mmap,
     .read = echo_read,
     .write = echo_write,
+    .unlocked_ioctl = echo_ioctl,
 };
 
 static struct pci_device_id echo_ids[] = {

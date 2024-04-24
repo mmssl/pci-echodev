@@ -2,6 +2,8 @@
  * in arch linux environment
  *
  **/
+#include "qemu/osdep.h"
+#include "qemu/typedefs.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_device.h"
 #include "hw/pci/pci_ids.h"
@@ -38,17 +40,17 @@ DECLARE_INSTANCE_CHECKER(PciechodevState, PCIECHODEV, TYPE_PCI_CUSTOM_DEVICE)
 // Struct defining the state
 // of the custom pcidevice
 struct PciechodevState {
-  PCIDevice pdev;
-  struct MemoryRegion mmio_bar0;
-  struct MemoryRegion mmio_bar1;
-  uint32_t bar0[16];
-  uint8_t bar1[4096];
-  struct dma_state {
-    dma_addr_t src;
-    dma_addr_t dst;
-    dma_addr_t cnt;
-    dma_addr_t cmd;
-  } *dma;
+	PCIDevice pdev;
+  	MemoryRegion mmio_bar0;
+  	MemoryRegion mmio_bar1;
+  	uint32_t bar0[16];
+  	uint8_t bar1[4096];
+  	struct dma_state {
+    		dma_addr_t src;
+    		dma_addr_t dst;
+    		dma_addr_t cnt;
+    		dma_addr_t cmd;
+  	} *dma;
 };
 
 #define DMA_RUN 1
@@ -83,8 +85,8 @@ static void fire_dma(PciechodevState *pciechodev) {
   } else {
 
     printf("PCIECHODEV - Transfer data EP to RC\n");
-    printf("pci_dma_write: src: %lx, dst: %lx, cnt: %ld, cmd: %lx\n", dma->dst,
-           dma->src, dma->cnt, dma->cmd);
+    printf("pci_dma_write: src: %lx, dst: %lx, cnt: %ld, cmd: %lx\n", dma->src,
+           dma->dst, dma->cnt, dma->cmd);
     if (check_range(dma->src, dma->cnt) == 0) {
       pci_dma_write(&pciechodev->pdev, dma->dst, pciechodev->bar1 + dma->src,
                     dma->cnt);
@@ -99,7 +101,7 @@ static uint64_t pciechodev_bar0_mmio_read(void *opaque, hwaddr addr,
                                           unsigned size) {
 
   PciechodevState *pciechodev = opaque;
-  printf("PCIECHODEV: pciechodev_bar0_mmio_read () addr %lx size %x \n", addr,
+  printf("PCIECHODEV: BAR0 pciechodev_mmio_read () addr %lx size %x \n", addr,
          size);
 
   if (addr == RANDVAL_REGISTER)
@@ -111,10 +113,11 @@ static uint64_t pciechodev_bar0_mmio_read(void *opaque, hwaddr addr,
 static void pciechodev_bar0_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                                        unsigned size) {
 
-  printf("PCIECHODEV: pciechodev_bar0_mmio_read () addr %lx val %lx size %x \n",
+  printf("PCIECHODEV: BAR0 pciechodev_mmio_write() addr %lx val %lx size %x \n",
          addr, val, size);
   PciechodevState *pciechodev = opaque;
-
+  if (addr >= 64)
+	  return;
   switch (addr) {
   case ID_REGISTER:
   case IRQ_REGISTER:
@@ -221,7 +224,7 @@ static void pci_pciechodev_realize(PCIDevice *pdev, Error **errp) {
   memset(pciechodev->bar0, 0, 64);
   memset(pciechodev->bar1, 0, 4096);
   pciechodev->bar0[0] = 0xcafeaffe;
-  pciechodev->dma = (struct dma_state *)&pciechodev->bar0[4];
+  pciechodev->dma = (struct dma_state *) &pciechodev->bar0[4];
 
   // Initialize an I/O memory region(pciechodev->mmio)
   // Acces of this region will cause callback
